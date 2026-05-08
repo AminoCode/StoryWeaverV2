@@ -4,7 +4,7 @@ import './index.css';
 import { loadData, saveData, makeCharacter, makeLocation, makeEvent, makeItem } from './store';
 import { runAnalysis } from './hooks/useAI';
 import { getSession, onAuthChange } from './services/auth';
-import { loadUserProjects, saveProjectToDB } from './services/db-store';
+import { ensureUserProfile, loadUserProjects, saveProjectToDB } from './services/db-store';
 
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
@@ -17,6 +17,7 @@ import Relationships from './components/Relationships';
 import ProjectManager from './components/ProjectManager';
 import AuthGate from './components/AuthGate';
 import Profile from './components/Profile';
+import WelcomeScreen from './components/WelcomeScreen';
 
 export const AppContext = createContext({});
 
@@ -46,6 +47,7 @@ export default function App() {
   const [user, setUser]                     = useState(null);
   const [dbSynced, setDbSynced]             = useState(false);
   const [authReady, setAuthReady]           = useState(false);
+  const [showWelcome, setShowWelcome]       = useState(() => localStorage.getItem('storyweaver_welcome_seen') !== '1');
   const dbSaveTimer                         = useRef(null);
 
   const activeProject = (data.projects || []).find(p => p.id === data.activeProjectId) || data.projects?.[0] || null;
@@ -75,6 +77,7 @@ export default function App() {
   // Load projects from DB into local state on sign-in
   async function syncFromDB(u) {
     try {
+      await ensureUserProfile(u);
       const dbProjects = await loadUserProjects(u.id);
       if (dbProjects.length > 0) {
         setData(prev => {
@@ -86,11 +89,27 @@ export default function App() {
           };
         });
         setDbSynced(true);
+      } else {
+        const saved = await Promise.all((data.projects || []).map(async p => ({
+          id: p.id,
+          dbId: await saveProjectToDB(u.id, p),
+        })));
+        const dbIds = new Map(saved.map(p => [p.id, p.dbId]));
+        setData(prev => ({
+          ...prev,
+          projects: (prev.projects || []).map(p => dbIds.has(p.id) ? { ...p, _dbId: dbIds.get(p.id) } : p),
+        }));
+        setDbSynced(true);
       }
     } catch { /* DB unavailable — continue with localStorage */ }
   }
 
   // ── Persist to localStorage on every data change ──────────────────────────────
+  const dismissWelcome = useCallback(() => {
+    localStorage.setItem('storyweaver_welcome_seen', '1');
+    setShowWelcome(false);
+  }, []);
+
   useEffect(() => { saveData(data); }, [data]);
 
   // ── 5-second autosave to DB ───────────────────────────────────────────────────
@@ -248,6 +267,12 @@ export default function App() {
         </div>
 
         {showProjectPicker && <ProjectManager onClose={() => setShowProjectPicker(false)} />}
+        {authReady && showWelcome && !user && (
+          <WelcomeScreen
+            onCreateAccount={() => { dismissWelcome(); setActiveView('__auth'); }}
+            onContinue={dismissWelcome}
+          />
+        )}
         {activeView === '__auth' && <AuthGate onClose={() => setActiveView('dashboard')} />}
         <Toast toasts={toasts} remove={removeToast} />
       </div>

@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('ipc', {
     'news:headlines', 'news:everything',
     'weather:current', 'weather:forecast',
     'drive:list-files', 'drive:download-file',
+    'story:analyze', 'story:format', 'story:chat',
+    'supabase:config',
     'db:query', 'db:run',
   ],
 });

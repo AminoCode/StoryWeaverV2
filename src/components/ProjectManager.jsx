@@ -1,6 +1,7 @@
 import React, { useContext, useState } from 'react';
 import { AppContext } from '../App';
 import { uuid, makeChapter } from '../store';
+import { deleteProjectFromDB } from '../services/db-store';
 
 function newProject(name, description = '') {
   return {
@@ -20,7 +21,7 @@ function newProject(name, description = '') {
 }
 
 export default function ProjectManager({ onClose }) {
-  const { data, setData, showToast } = useContext(AppContext);
+  const { data, setData, showToast, user } = useContext(AppContext);
   const [newName, setNewName] = useState('');
   const [newDesc, setNewDesc] = useState('');
   const [creating, setCreating] = useState(false);
@@ -44,9 +45,14 @@ export default function ProjectManager({ onClose }) {
     onClose();
   };
 
-  const deleteProject = (id, e) => {
+  const deleteProject = async (id, e) => {
     e.stopPropagation();
     if (projects.length <= 1) { showToast('Cannot delete the only project', 'warn'); return; }
+    const project = projects.find(p => p.id === id);
+    if (user && project?._dbId) {
+      try { await deleteProjectFromDB(user.id, project._dbId); }
+      catch (err) { showToast(`Cloud delete failed: ${err.message}`, 'error'); return; }
+    }
     const updated = projects.filter(p => p.id !== id);
     setData(prev => ({
       ...prev,

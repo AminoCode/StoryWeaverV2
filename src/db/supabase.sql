@@ -1,18 +1,48 @@
--- supabase.sql — Supabase schema for StoryWeaver
--- Run this in your Supabase SQL editor to initialize the database.
+-- Supabase schema for StoryWeaver.
+-- Run this in your Supabase SQL editor to initialize the cloud database.
 
-CREATE TABLE IF NOT EXISTS users (
-  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name       TEXT NOT NULL,
-  email      TEXT UNIQUE,
-  created_at TIMESTAMPTZ DEFAULT NOW()
+CREATE TABLE IF NOT EXISTS sw_profiles (
+  id           UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  email        TEXT NOT NULL DEFAULT '',
+  full_name    TEXT NOT NULL DEFAULT '',
+  avatar_url   TEXT NOT NULL DEFAULT '',
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE IF NOT EXISTS settings (
-  key   TEXT PRIMARY KEY,
-  value TEXT NOT NULL
+CREATE TABLE IF NOT EXISTS sw_projects (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id      UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  name         TEXT NOT NULL DEFAULT 'Untitled',
+  data         JSONB NOT NULL DEFAULT '{}',
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Enable Row Level Security (required for Supabase)
-ALTER TABLE users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sw_profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sw_projects ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users manage own profile" ON sw_profiles;
+CREATE POLICY "Users manage own profile" ON sw_profiles
+  FOR ALL USING (auth.uid() = id) WITH CHECK (auth.uid() = id);
+
+DROP POLICY IF EXISTS "Users manage own projects" ON sw_projects;
+CREATE POLICY "Users manage own projects" ON sw_projects
+  FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+CREATE OR REPLACE FUNCTION update_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN NEW.updated_at = now(); RETURN NEW; END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS sw_profiles_updated_at ON sw_profiles;
+CREATE TRIGGER sw_profiles_updated_at
+  BEFORE UPDATE ON sw_profiles
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+DROP TRIGGER IF EXISTS sw_projects_updated_at ON sw_projects;
+CREATE TRIGGER sw_projects_updated_at
+  BEFORE UPDATE ON sw_projects
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+CREATE INDEX IF NOT EXISTS sw_projects_user_id_idx ON sw_projects(user_id);

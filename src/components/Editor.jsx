@@ -47,17 +47,19 @@ export default function Editor() {
   }, [activeChapter?.id, cancel]);
 
   // Save with debounce
-  const persist = useCallback((html) => {
+  const persist = useCallback((html, immediate = false) => {
     if (!activeChapter) return;
     const wc = countWords(html);
     setWordCount(wc);
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
+    const save = () => {
       const updated = (activeProject.chapters || []).map(c =>
         c.id === activeChapter.id ? { ...c, content: html, wordCount: wc, updatedAt: Date.now() } : c
       );
       updateProject({ chapters: updated });
-    }, 5000);
+    };
+    if (immediate) save();
+    else saveTimer.current = setTimeout(save, 5000);
   }, [activeChapter, activeProject, updateProject]);
 
   const handleInput = () => {
@@ -75,6 +77,46 @@ export default function Editor() {
 
   const isActive = (cmd) => {
     try { return document.queryCommandState(cmd); } catch { return false; }
+  };
+
+  const getEditorSelection = () => {
+    const editor = editorRef.current;
+    const selection = window.getSelection();
+    if (!editor || !selection || selection.rangeCount === 0 || selection.isCollapsed) return null;
+    const range = selection.getRangeAt(0);
+    if (!editor.contains(range.commonAncestorContainer)) return null;
+    return { range, text: selection.toString() };
+  };
+
+  const formattedTextToHtml = (text) => text
+    .split(/\n{2,}/)
+    .map(block => block.trim())
+    .filter(Boolean)
+    .map(block => {
+      const escaped = block
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\n/g, '<br/>');
+      return `<p>${escaped}</p>`;
+    })
+    .join('');
+
+  const replaceRangeWithHtml = (range, html) => {
+    const template = document.createElement('template');
+    template.innerHTML = html;
+    const fragment = template.content;
+    const lastNode = fragment.lastChild;
+    range.deleteContents();
+    range.insertNode(fragment);
+    if (lastNode) {
+      const nextRange = document.createRange();
+      nextRange.setStartAfter(lastNode);
+      nextRange.collapse(true);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(nextRange);
+    }
   };
 
   // Chapter CRUD
@@ -103,12 +145,13 @@ export default function Editor() {
     if (!editorRef.current || !activeChapter) return;
     setFormatting(true);
     try {
-      const result = await formatText(activeChapter.content || '', formatId);
-      const html = result.split('\n\n').map(p =>
-        p.trim() ? `<p>${p.replace(/\n/g, '<br/>')}</p>` : ''
-      ).join('');
-      editorRef.current.innerHTML = html;
-      persist(html);
+      const selected = getEditorSelection();
+      const source = selected?.text?.trim() ? selected.text : editorRef.current.innerHTML;
+      const result = await formatText(source, formatId);
+      const html = formattedTextToHtml(result);
+      if (selected) replaceRangeWithHtml(selected.range, html);
+      else editorRef.current.innerHTML = html;
+      persist(editorRef.current.innerHTML, true);
       showToast(`Reformatted as ${FORMATS.find(f => f.id === formatId)?.label}`, 'success');
     } catch (err) {
       showToast(`Format failed: ${err.message}`, 'error');

@@ -2,6 +2,25 @@ import { getSupabase } from './supabase';
 
 const TABLE = 'sw_projects';
 
+export async function ensureUserProfile(user) {
+  if (!user?.id) return null;
+  const sb = await getSupabase();
+  const fullName = user.user_metadata?.full_name || user.user_metadata?.name || '';
+  const avatarUrl = user.user_metadata?.avatar_url || '';
+  const { data, error } = await sb
+    .from('sw_profiles')
+    .upsert({
+      id: user.id,
+      email: user.email || '',
+      full_name: fullName,
+      avatar_url: avatarUrl,
+    }, { onConflict: 'id' })
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data;
+}
+
 export async function loadUserProjects(userId) {
   const sb = await getSupabase();
   const { data, error } = await sb

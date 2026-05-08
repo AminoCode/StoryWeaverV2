@@ -1,5 +1,26 @@
 import { getSupabase } from './supabase';
 
+export async function signUpWithEmail(email, password, fullName = '') {
+  const sb = await getSupabase();
+  const { data, error } = await sb.auth.signUp({
+    email,
+    password,
+    options: {
+      data: fullName ? { full_name: fullName } : {},
+      emailRedirectTo: window.location.origin,
+    },
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function signInWithEmail(email, password) {
+  const sb = await getSupabase();
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
+  if (error) throw error;
+  return data;
+}
+
 export async function signInWithGoogle() {
   const sb = await getSupabase();
   const { error } = await sb.auth.signInWithOAuth({
